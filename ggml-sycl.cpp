@@ -12615,6 +12615,9 @@ static ggml_backend_buffer_type_i ggml_backend_sycl_buffer_type_interface = {
 };
 
 ggml_backend_buffer_type_t ggml_backend_sycl_buffer_type(int device) {
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+
     GGML_SYCL_DEBUG("[SYCL] call ggml_backend_sycl_buffer_type\n");
 
     if (device>=ggml_sycl_info().device_count or device<0) {
@@ -12633,31 +12636,6 @@ ggml_backend_buffer_type_t ggml_backend_sycl_buffer_type(int device) {
             ggml_backend_sycl_buffer_types[i] = {
                 /* .iface    = */ ggml_backend_sycl_buffer_type_interface,
                 /* .context  = */ new ggml_backend_sycl_buffer_type_context{i, GGML_SYCL_NAME + std::to_string(i), stream},
-            };
-        }
-        ggml_backend_sycl_buffer_type_initialized = true;
-    }
-    return &ggml_backend_sycl_buffer_types[device];
-}
-
-ggml_backend_buffer_type_t ggml_backend_sycl_buffer_type(ggml_backend_sycl_context * ctx) {
-    GGML_SYCL_DEBUG("[SYCL] call ggml_backend_sycl_buffer_type\n");
-
-    int device = ctx->device;
-    if (device>=ggml_sycl_info().device_count or device<0) {
-        printf("ggml_backend_sycl_buffer_type error: device_index:%d is out of range [0, %d], miss to call ggml_backend_sycl_set_single_device()\n",
-            device, ggml_sycl_info().device_count-1);
-        GGML_ASSERT(device<ggml_sycl_info().device_count);
-    }
-    static struct ggml_backend_buffer_type ggml_backend_sycl_buffer_types[GGML_SYCL_MAX_DEVICES];
-
-    static bool ggml_backend_sycl_buffer_type_initialized = false;    
-
-    if (!ggml_backend_sycl_buffer_type_initialized) {
-        for (int i = 0; i < ggml_sycl_info().device_count; i++) {
-            ggml_backend_sycl_buffer_types[i] = {
-                /* .iface    = */ ggml_backend_sycl_buffer_type_interface,
-                /* .context  = */ new ggml_backend_sycl_buffer_type_context{i, GGML_SYCL_NAME + std::to_string(i), ctx->stream(i, 0)},
             };
         }
         ggml_backend_sycl_buffer_type_initialized = true;
@@ -13016,6 +12994,9 @@ static ggml_backend_buffer_type_i ggml_backend_sycl_split_buffer_type_interface 
 };
 
 GGML_CALL ggml_backend_buffer_type_t ggml_backend_sycl_split_buffer_type(const float * tensor_split) {
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    
     GGML_SYCL_DEBUG("[SYCL] call ggml_backend_sycl_split_buffer_type\n");
     ggml_check_sycl();
     // FIXME: this is not thread safe
@@ -13123,7 +13104,7 @@ GGML_CALL static void ggml_backend_sycl_free(ggml_backend_t backend) {
 
 GGML_CALL static ggml_backend_buffer_type_t ggml_backend_sycl_get_default_buffer_type(ggml_backend_t backend) {
     ggml_backend_sycl_context * sycl_ctx = (ggml_backend_sycl_context *)backend->context;
-    return ggml_backend_sycl_buffer_type(sycl_ctx);
+    return ggml_backend_sycl_buffer_type(sycl_ctx->device);
 }
 
 GGML_CALL static void ggml_backend_sycl_set_tensor_async(ggml_backend_t backend,
@@ -13131,8 +13112,9 @@ GGML_CALL static void ggml_backend_sycl_set_tensor_async(ggml_backend_t backend,
                                                const void *data, size_t offset,
                                                size_t size) try {
     ggml_backend_sycl_context * sycl_ctx = (ggml_backend_sycl_context *)backend->context;
-    GGML_ASSERT(tensor->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx) && "unsupported buffer type");
-    GGML_ASSERT(tensor->backend == GGML_BACKEND_TYPE_GPU);
+    ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+
+    GGML_ASSERT(buf->buft == ggml_backend_sycl_buffer_type(sycl_ctx->device) && "unsupported buffer type");
     const queue_ptr stream = sycl_ctx->stream(sycl_ctx->device, 0);
     SYCL_CHECK(CHECK_TRY_ERROR((stream)->memcpy(
         (char *)tensor->data + offset, data, size).wait()));
@@ -13148,8 +13130,9 @@ GGML_CALL static void ggml_backend_sycl_get_tensor_async(ggml_backend_t backend,
                                                void *data, size_t offset,
                                                size_t size) try {
     ggml_backend_sycl_context * sycl_ctx = (ggml_backend_sycl_context *)backend->context;
-    GGML_ASSERT(tensor->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx) && "unsupported buffer type");
-    GGML_ASSERT(tensor->backend == GGML_BACKEND_TYPE_GPU);
+    ggml_backend_buffer_t buf = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+
+    GGML_ASSERT(buf->buft == ggml_backend_sycl_buffer_type(sycl_ctx->device) && "unsupported buffer type");
     const queue_ptr stream = sycl_ctx->stream(sycl_ctx->device, 0);
     SYCL_CHECK(CHECK_TRY_ERROR((stream)->memcpy(
         data, (const char *)tensor->data + offset, size).wait()));
@@ -13164,7 +13147,7 @@ GGML_CALL static bool ggml_backend_sycl_cpy_tensor_async(ggml_backend_t backend,
                                                          const ggml_tensor *src,
                                                          ggml_tensor *dst) try {
     ggml_backend_sycl_context * sycl_ctx = (ggml_backend_sycl_context *)backend->context;
-    if (dst->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx) && ggml_backend_buffer_is_sycl(src->buffer)) {
+    if (dst->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx->device) && ggml_backend_buffer_is_sycl(src->buffer)) {
         /*
         DPCT1009:215: SYCL uses exceptions to report errors and does not use the
         error codes. The original code was commented out and a warning string
@@ -13208,10 +13191,10 @@ GGML_CALL static ggml_status ggml_backend_sycl_graph_compute(ggml_backend_t back
             continue;
         }
 #ifndef NDEBUG
-        assert(node->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx));
+        assert(node->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx->device));
         for (int j = 0; j < GGML_MAX_SRC; j++) {
             if (node->src[j] != nullptr) {
-                assert(node->src[j]->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx));
+                assert(node->src[j]->buffer->buft == ggml_backend_sycl_buffer_type(sycl_ctx->device));
             }
         }
 #endif
