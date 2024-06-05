@@ -9539,7 +9539,7 @@ struct ggml_sycl_pool_leg : public ggml_sycl_pool {
         }
         void * ptr;
         size_t look_ahead_size = (size_t) (1.05 * size);
-        
+
         SYCL_CHECK(
             CHECK_TRY_ERROR(ptr = (void *)sycl::malloc_device(
                                 look_ahead_size, *qptr)));
@@ -10335,7 +10335,7 @@ inline void ggml_sycl_op_dequantize_mul_mat_vec(
 }
 
 inline void ggml_sycl_op_mul_mat_sycl(
-    ggml_backend_sycl_context & ctx,    
+    ggml_backend_sycl_context & ctx,
     const ggml_tensor *src0, const ggml_tensor *src1, ggml_tensor *dst,
     const char *src0_dd_i, const float *src1_ddf_i, const char *src1_ddq_i,
     float *dst_dd_i, const int64_t row_low, const int64_t row_high,
@@ -11426,7 +11426,7 @@ static void ggml_sycl_mul_mat_vec_nc(ggml_backend_sycl_context & ctx, const ggml
 
     SYCL_CHECK(ggml_sycl_set_device(ctx.device));
     queue_ptr main_stream = ctx.stream();
-    
+
     void  * src0_ddq = src0->data;
     float * src1_ddf = (float *) src1->data;
     float * dst_ddf  = (float *) dst->data;
@@ -12741,7 +12741,7 @@ ggml_backend_sycl_split_buffer_init_tensor(ggml_backend_buffer_t buffer,
         // FIXME: do not crash if cudaMalloc fails
         // currently, init_tensor cannot fail, it needs to be fixed in ggml-backend first
         ggml_sycl_set_device(i);
-        const queue_ptr stream = ctx->streams[i];        
+        const queue_ptr stream = ctx->streams[i];
         char * buf;
         /*
         DPCT1009:208: SYCL uses exceptions to report errors and does not use the
@@ -12878,7 +12878,7 @@ ggml_backend_sycl_split_buffer_get_tensor(ggml_backend_buffer_t buffer,
         was inserted. You need to rewrite this code.
         */
         ggml_sycl_set_device(i);
-        const queue_ptr stream = ctx->streams[i];        
+        const queue_ptr stream = ctx->streams[i];
         SYCL_CHECK(CHECK_TRY_ERROR(
             (*stream)
                 .memcpy(buf_host, extra->data_device[i], original_size)
@@ -12981,7 +12981,7 @@ static ggml_backend_buffer_type_i ggml_backend_sycl_split_buffer_type_interface 
 GGML_CALL ggml_backend_buffer_type_t ggml_backend_sycl_split_buffer_type(const float * tensor_split) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
-    
+
     GGML_SYCL_DEBUG("[SYCL] call ggml_backend_sycl_split_buffer_type\n");
     ggml_check_sycl();
     // FIXME: this is not thread safe
